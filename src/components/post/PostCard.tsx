@@ -1,175 +1,119 @@
-import { useState } from "react";
-import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Heart, MessageSquare } from "lucide-react";
-import { Post, Notification } from "@/types/post";
-import { v4 as uuidv4 } from 'uuid';
-import CommentSection from "./CommentSection";
+import React, { useState } from 'react';
+import { Post, Comment } from '../../types';
+import { usePostsStore } from '../../store/posts';
+import { useAuthStore } from '../../store/auth';
+import { useNotificationsStore } from '../../store/notifications';
+import { Link } from 'react-router-dom';
+import { Heart, MessageCircle } from 'lucide-react';
 
 interface PostCardProps {
   post: Post;
-  onLike: (postId: string) => void;
-  onComment: (postId: string, content: string) => void;
 }
 
-const PostCard = ({ post, onLike, onComment }: PostCardProps) => {
-  const [avatarImage] = useState<string | null>(() => localStorage.getItem('avatarImage'));
-
-  const createNotification = (type: 'like' | 'comment' | 'reply' | 'comment_like', targetId: string) => {
-    // For testing purposes, we'll create notifications even for self-interactions
-    const notification: Notification = {
-      id: uuidv4(),
-      userId: type === 'like' ? post.userId : post.comments.find(c => c.id === targetId)?.userId || '',
-      type,
-      postId: post.id,
-      actorId: "current-user",
-      actorName: "Nikola",
-      read: false,
-      createdAt: new Date().toISOString()
-    };
-    
-    const notifications = JSON.parse(localStorage.getItem('notifications') || '[]');
-    localStorage.setItem('notifications', JSON.stringify([notification, ...notifications]));
-  };
+export const PostCard: React.FC<PostCardProps> = ({ post }) => {
+  const { user } = useAuthStore();
+  const { likePost, addComment } = usePostsStore();
+  const { addNotification } = useNotificationsStore();
+  const [commentContent, setCommentContent] = useState('');
 
   const handleLike = () => {
-    onLike(post.id);
-    if (!post.likes.includes("current-user")) {
-      createNotification('like', post.id);
+    if (!user) return;
+    likePost(post.id, user.id);
+    if (post.userId !== user.id) {
+      addNotification(post.userId, 'like', post.id);
     }
   };
 
-  const handleComment = (postId: string, content: string) => {
-    onComment(postId, content);
-    createNotification('comment', postId);
-  };
-
-  const handleLikeComment = (commentId: string) => {
-    const posts = JSON.parse(localStorage.getItem('posts') || '[]');
-    const updatedPosts = posts.map((p: Post) => {
-      if (p.id === post.id) {
-        const updatedComments = p.comments.map(comment => {
-          if (comment.id === commentId) {
-            const hasLiked = comment.likes.includes("current-user");
-            const newLikes = hasLiked
-              ? comment.likes.filter(id => id !== "current-user")
-              : [...comment.likes, "current-user"];
-            
-            if (!hasLiked) {
-              createNotification('comment_like', commentId);
-            }
-            
-            return { ...comment, likes: newLikes };
-          }
-          return comment;
-        });
-        return { ...p, comments: updatedComments };
-      }
-      return p;
-    });
-    localStorage.setItem('posts', JSON.stringify(updatedPosts));
-    // Force a re-render by updating the parent component
-    onComment(post.id, '');
-  };
-
-  const handleReplyComment = (commentId: string, content: string) => {
-    if (!content.trim()) return;
-
-    const newReply = {
-      id: uuidv4(),
-      userId: "current-user",
-      userName: "Nikola",
-      content,
-      createdAt: new Date().toISOString(),
-      likes: []
-    };
-
-    const posts = JSON.parse(localStorage.getItem('posts') || '[]');
-    const updatedPosts = posts.map((p: Post) => {
-      if (p.id === post.id) {
-        const updatedComments = p.comments.map(comment => {
-          if (comment.id === commentId) {
-            createNotification('reply', commentId);
-            return {
-              ...comment,
-              replies: [newReply, ...comment.replies]
-            };
-          }
-          return comment;
-        });
-        return { ...p, comments: updatedComments };
-      }
-      return p;
-    });
-    localStorage.setItem('posts', JSON.stringify(updatedPosts));
-    // Force a re-render by updating the parent component
-    onComment(post.id, '');
+  const handleCommentSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !commentContent.trim()) return;
+    addComment(post.id, user.id, commentContent);
+    setCommentContent('');
+    if (post.userId !== user.id) {
+      addNotification(post.userId, 'comment', post.id);
+    }
   };
 
   return (
-    <Card className="p-4 bg-[#1a1d21]/90 backdrop-blur-lg border-none animate-fade-in">
-      <div className="flex items-center gap-3 mb-4">
-        <Avatar>
-          {avatarImage ? (
-            <img src={avatarImage} alt={post.userName} className="object-cover" />
-          ) : (
-            <AvatarFallback className="bg-[#2a2d31] text-white">
-              {post.userName.slice(0, 2).toUpperCase()}
-            </AvatarFallback>
-          )}
-        </Avatar>
-        <div className="flex flex-col">
-          <h3 className="font-semibold text-white">{post.userName}</h3>
-          <p className="text-sm text-gray-400">
-            {new Date(post.createdAt).toLocaleDateString()}
-          </p>
+    <div className="bg-gray-900 rounded-lg p-6">
+      <div className="flex items-center space-x-4 mb-4">
+        <Link to={`/profile/${post.userId}`}>
+          <img
+            src={post.userId === '1' ? 'https://images.unsplash.com/photo-1522529599102-193c0d76b5b6?w=150' : 'https://images.unsplash.com/photo-1522529599102-193c0d76b5b6?w=150'}
+            alt="User"
+            className="h-10 w-10 rounded-full object-cover cursor-pointer hover-effect-scale"
+          />
+        </Link>
+        <div>
+          <p className="font-medium text-white">User {post.userId}</p>
+          <p className="text-gray-300 text-sm">Posted on {post.createdAt.toLocaleDateString()}</p>
         </div>
       </div>
-      
-      <p className="mb-4 text-gray-200 break-words">{post.content}</p>
-      
-      {post.mediaUrl && (
-        <div className="mb-4">
-          {post.mediaType === 'image' ? (
-            <img src={post.mediaUrl} alt="Post media" className="w-full max-h-96 object-cover rounded-lg" />
-          ) : (
-            <video src={post.mediaUrl} className="w-full max-h-96 rounded-lg" controls />
-          )}
+      <p className="text-white mb-4">{post.content}</p>
+      {post.media && post.media.length > 0 && (
+        <div className="flex flex-wrap gap-2 mb-4">
+          {post.media.map((url, index) => (
+            <img
+              key={index}
+              src={url}
+              alt="Post media"
+              className="h-20 w-20 object-cover rounded-lg"
+            />
+          ))}
         </div>
       )}
-
-      <div className="flex gap-4 text-gray-400">
-        <Button 
-          variant="ghost" 
-          size="sm" 
-          className={`p-0 h-auto hover:scale-105 transition-transform ${
-            post.likes.includes("current-user") ? "text-[#E41E12]" : ""
-          }`}
+      <div className="flex items-center space-x-4 mb-4">
+        <button
           onClick={handleLike}
+          className="text-gray-400 hover:text-[#E41E12] hover-effect"
         >
-          <Heart className="w-4 h-4" />
-          {post.likes.length}
-        </Button>
-        <Button 
-          variant="ghost" 
-          size="sm" 
-          className="p-0 h-auto hover:scale-105 transition-transform"
-        >
-          <MessageSquare className="w-4 h-4" />
-          {post.comments.length}
-        </Button>
+          <Heart size={20} className="mr-2" />
+          {post.likes.includes(user?.id || '') ? 'Unlike' : 'Like'} ({post.likes.length})
+        </button>
       </div>
-
-      <CommentSection
-        postId={post.id}
-        comments={post.comments}
-        onComment={handleComment}
-        onLikeComment={handleLikeComment}
-        onReplyComment={handleReplyComment}
-      />
-    </Card>
+      <div className="space-y-4">
+        {post.comments.map((comment) => (
+          <div key={comment.id} className="bg-gray-800 p-4 rounded-lg">
+            <div className="flex items-center space-x-4 mb-2">
+              <Link to={`/profile/${comment.userId}`}>
+                <img
+                  src="https://images.unsplash.com/photo-1522529599102-193c0d76b5b6?w=150"
+                  alt="User"
+                  className="h-8 w-8 rounded-full object-cover cursor-pointer hover-effect-scale"
+                />
+              </Link>
+              <div>
+                <p className="font-medium text-white">User {comment.userId}</p>
+                <p className="text-gray-300 text-sm">Commented on {comment.createdAt.toLocaleDateString()}</p>
+              </div>
+            </div>
+            <p className="text-white">{comment.content}</p>
+          </div>
+        ))}
+      </div>
+      <form onSubmit={handleCommentSubmit} className="mt-4">
+        <div>
+          <label htmlFor="comment" className="block text-sm font-medium text-gray-200">
+            Add a comment
+          </label>
+          <input
+            type="text"
+            id="comment"
+            value={commentContent}
+            onChange={(e) => setCommentContent(e.target.value)}
+            className="mt-1 block w-full rounded-md bg-gray-800 border-gray-700 text-white shadow-sm focus:border-[#E41E12] focus:ring focus:ring-[#E41E12] focus:ring-opacity-50"
+            placeholder="Enter your comment"
+          />
+        </div>
+        <button
+          type="submit"
+          disabled={!commentContent.trim()}
+          className="mt-2 w-full bg-[#E41E12] text-white py-2 px-4 rounded-md hover:bg-[#E41E12]/80 transition-colors hover-effect disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+        >
+          <MessageCircle size={20} className="mr-2" />
+          Comment
+        </button>
+      </form>
+    </div>
   );
 };
-
-export default PostCard;
